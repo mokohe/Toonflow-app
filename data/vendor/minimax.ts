@@ -137,7 +137,7 @@ const vendor: VendorConfig = {
   version: "2.1",
   author: "Toonflow",
   name: "MiniMax(海螺AI)",
-  description: "MiniMax官方接口适配，支持M系列推理文本模型、文生图/图生图、视频生成（文生视频、图生视频、首尾帧生成）能力 \n [前往平台](https://minimaxi.com/)",
+  description: "MiniMax官方接口适配，支持文本、图片、视频与语音合成能力 \n [前往平台](https://minimaxi.com/)",
   inputs: [
     { key: "apiKey", label: "API密钥", type: "password", required: true },
     { key: "baseUrl", label: "请求地址", type: "url", required: true, placeholder: "示例：https://api.minimaxi.com" },
@@ -155,6 +155,37 @@ const vendor: VendorConfig = {
     // 图片模型
     { name: "海螺图像V1", modelName: "image-01", type: "image", mode: ["text", "singleImage"] },
     { name: "海螺图像V1 Live版", modelName: "image-01-live", type: "image", mode: ["text", "singleImage"], associationSkills: "支持自定义画风" },
+    // 语音模型
+    {
+      name: "MiniMax Speech 2.8 Turbo",
+      modelName: "speech-2.8-turbo",
+      type: "tts",
+      voices: [
+        { title: "青涩青年", voice: "male-qn-qingse" },
+        { title: "精英青年", voice: "male-qn-jingying" },
+        { title: "霸道青年", voice: "male-qn-badao" },
+        { title: "青年大学生", voice: "male-qn-daxuesheng" },
+        { title: "少女", voice: "female-shaonv" },
+        { title: "御姐", voice: "female-yujie" },
+        { title: "成熟女性", voice: "female-chengshu" },
+        { title: "甜美女性", voice: "female-tianmei" },
+      ],
+    },
+    {
+      name: "MiniMax Speech 2.8 HD",
+      modelName: "speech-2.8-hd",
+      type: "tts",
+      voices: [
+        { title: "青涩青年", voice: "male-qn-qingse" },
+        { title: "精英青年", voice: "male-qn-jingying" },
+        { title: "霸道青年", voice: "male-qn-badao" },
+        { title: "青年大学生", voice: "male-qn-daxuesheng" },
+        { title: "少女", voice: "female-shaonv" },
+        { title: "御姐", voice: "female-yujie" },
+        { title: "成熟女性", voice: "female-chengshu" },
+        { title: "甜美女性", voice: "female-tianmei" },
+      ],
+    },
     // 视频模型
     {
       name: "海螺2.3",
@@ -366,7 +397,41 @@ const videoRequest = async (config: VideoConfig, model: VideoModel): Promise<str
 };
 
 const ttsRequest = async (config: TTSConfig, model: TTSModel): Promise<string> => {
-  return "";
+  if (!config.text?.trim()) throw new Error("语音合成文本不能为空");
+  const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+  const speed = Number.isFinite(config.speechRate) && config.speechRate > 0 ? clamp(config.speechRate, 0.5, 2) : 1;
+  const pitch = Number.isFinite(config.pitchRate) ? clamp(config.pitchRate, -12, 12) : 0;
+  const vol = Number.isFinite(config.volume) && config.volume > 0 ? clamp(config.volume, 0.1, 10) : 1;
+  const response = await axios.post(
+    `${getBaseUrl()}/v1/t2a_v2`,
+    {
+      model: model.modelName,
+      text: config.text,
+      stream: false,
+      language_boost: "Chinese",
+      output_format: "url",
+      voice_setting: {
+        voice_id: config.voice || "male-qn-qingse",
+        speed,
+        vol,
+        pitch,
+      },
+      audio_setting: {
+        sample_rate: 32000,
+        bitrate: 128000,
+        format: "mp3",
+        channel: 1,
+      },
+      subtitle_enable: false,
+      aigc_watermark: false,
+    },
+    { headers: getHeaders() },
+  );
+  const statusCode = response.data?.base_resp?.status_code;
+  if (statusCode !== 0) throw new Error(response.data?.base_resp?.status_msg || "MiniMax语音合成失败");
+  const audioUrl = response.data?.data?.audio;
+  if (!audioUrl || typeof audioUrl !== "string") throw new Error("MiniMax语音接口未返回音频地址");
+  return audioUrl;
 };
 
 const checkForUpdates = async (): Promise<{ hasUpdate: boolean; latestVersion: string; notice: string }> => {
